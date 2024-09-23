@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>ChordLink - NodeTrix</title>
+    <script src="https://unpkg.com/d3@5.9.7/dist/d3.js"></script>
+    <script src="closure-library/closure/goog/base.js"></script>
+    <script type="text/javascript" src="expandCluster.js"></script>
+    <script type="text/javascript" src="gmlParser.js"></script>
+    <script type="text/javascript" src="arcMinimizer2.js"></script>
+    <script type="text/javascript" src="crossingReducerHeuristic.js"></script>
+    <script type="text/javascript" src="listeners.js"></script>
+    <script type="text/javascript" src="labelling.js"></script>
+    <script type="text/javascript" src="palettes.js"></script>
+    <script type="text/javascript" src="chordCreator.js"></script>
+    <script type="text/javascript" src="chordDiagram.js"></script>
+
+    <script type="text/javascript" src="expandMatrix.js"></script>
+    <script type="text/javascript" src="matrixCreator.js"></script>
+    <script type="text/javascript" src="lib/science.v1.js"></script>
+    <script type="text/javascript" src="lib/reorder.v1.min.js"></script>
+
+    <script type="text/javascript" src="kmeansClustering.js"></script>
+    <script type="text/javascript" src="indexCalinskiHarabasz.js"></script>
+	  <script type="text/javascript" src="https://unpkg.com/netclustering@0.0.3/dist/netClustering.js"></script>
+    <link rel="stylesheet" type="text/css" href="docStyle2.css">
+  </head>
+  <body>
+
+    <script type="text/javascript">
+
+//var width = 960,     // svg width
+var width = 1320,     // svg width
+    height = 540,     // svg height --->ratio 16/9
+    dr = 4,      // default point radius
+    expand = {}, // expanded clusters
+    data, net, simulation, hullg, hull, linkg, link, nodeg, chordg, matrixg, node, text,
+  	startX,startY,endX, endY,deltaMatrixX, deltaMatrixY,//coordinate mousedown e mouseup
+  	clNum = 0, //numero progressivo di cluster creati con selezione area mouse
+    nodesAdjacency = [],
+    degSortedList = [],//descent ordered list of nodes degrees
+    weightSortedEdges = [],
+    k = 1, //zooming factor
+    deltaX = 0, // X zooming translation
+    deltaY = 0, // Y zooming translation
+    //labelling = "labelling with zooming",
+    labelSize = 12,
+	  off = 15,
+    padAngle = 0.007,
+    palette = createPalette(getPalette(34)),/*["#A52A2A", "#0000FF", "#008000", "#FF00FF", "#FFFF00", "#FF0000",
+         "#BA55D3", "#32CD32", "#00BFFF", "#B8860B", "#FFA500", "#DC143C",
+         "#90EE90", "#00FFFF", "#DEB887", "#F0E68C", "#DDA0DD", "#FA8072",
+         "#FFA07A", "#B22222", "#BDB76B", "#9370DB", "#9ACD32", "#008B8B",
+         "#000080", "#D2691E", "#C0C0C0", "#3CB371", "#DB7093", "#8B0000",
+         "#4682B4", "#FFD700", "#7FFF00", "#00FFFF", "#F4A460", "#FF4500",
+         "#2F4F4F", "#800000", "#B0C4DE", "#006400", "#4B0082", "#00FF7F"],*/
+    div = d3.select("body").append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
+
+var noLabels = new NoLabels(),
+    labellingWithZooming = new LabellingWithZooming(),
+    allLabelsShown = new AllLabelsShown(),
+    labelling = new Labelling();
+
+labelling.setStrategy(labellingWithZooming);
+
+
+var fill = d3.scaleOrdinal(palette),
+    colorIndex = -1,
+    curve = d3.line()
+             .curve(d3.curveCardinal.tension(.85));
+
+function print(string){
+  //console.log(string);
+}
+
+function assignHullColor(i){
+  var control = true;
+//  colorIndex++;
+//  colorIndex = colorIndex >= palette.length ? 0 : colorIndex;
+
+  while (control) {
+    if (i > 34) {
+      i = 0;
+      for (var j = 0; j < palette.length; j++) {
+        palette[j].used = false;
+      }
+    }
+    if(palette[i].used){
+      i++;
+    }else{
+      palette[i].used = true;
+      palette[i].element = "hull";
+      control = false;
+    }
+  }
+  return palette[i].color;
+}
+
+function assignClusterColor(){
+/*  var color;
+  colorIndex++;
+  colorIndex = colorIndex >= palette.length ? 0 : colorIndex;
+  color = palette[colorIndex];
+
+  palette = palette.filter(p => p!= color);*/
+
+  var control = true,
+      i = 0,
+      color;
+
+  while (control) {
+    if (i > 34) {
+      i = 0;
+      for (var j = 0; j < palette.length; j++) {
+        palette[j].used = false;
+      }
+    }
+    if(palette[i].used){
+      i++;
+    }else{
+    /*  color = palette[i];
+      palette = palette.filter(p => p!= color);
+      control = false;*/
+      palette[i].used = true;
+      palette[i].element = "cluster";
+      control = false;
+    }
+  }
+  return palette[i].color;
+}
+
+
+function nodeid(n) {
+  return n.size ? "_g_"+n.cluster : n.id;
+}
+
+function linkid(l) {
+  var u = nodeid(l.source),
+      v = nodeid(l.target);
+  return u<v ? u+"|"+v : v+"|"+u;
+}
+
+function getCluster(n) { return n.cluster; }
+function getGroup(n) { return n.community; }
+function getLabel(n)  {return n.label ? n.label : n.id;}//decide wich text to display
+function getHull(h){return h.group;}
+
+function network(data, prev, index, expand) {// constructs the network to visualize
+  expand = expand || {}; //mappa booleana dei cluster che devono essere espansi(true) e di quelli che vanno collassati(false)
+
+  var gm = {},    // group map:
+      nm = {},    // node map:
+      lm = {},    // link map:
+      gn = {},    // previous group nodes:
+      gc = {},    // previous group centroids:
+      nodes = [], // output nodes
+      edges = []; // output edges
+
+  // process previous nodes for reuse or centroid calculation
+  if (prev) {//prev in generale è la net precedente
+    prev.nodes.forEach(function(n) {//per ogni nodo
+      var i = index(n), o;//definisco il cluster del nodo: se non c'è viene posto ad undefined
+      if (n.size > 0) {//se il nodo ha dimensione > 0
+        gn[i] = n;    //mappo sulla posizione corrispondente al cluster il nodo n(cioè dico che il nodo n appartenva al gruppo i)
+        n.size = 0;   //setto la dimensione del nodo  a 0
+      } else {  //se il nodo ha dimensione 0
+        o = gc[i] || (gc[i] = {x:0,y:0,count:0}); //prendo il centroide del gruppo i
+        o.x += n.x;                               //ci aggiungo le coordinate del nodo considerato
+        o.y += n.y;
+        o.count += 1;                             //aggiorno il numero di nodi usati per calcolare il centroide
+      }
+    });
+  }
+
+  // determine nodes
+  for (var k=0; k<data.nodes.length; ++k) {   //per ogni nodo definito nei dati in input
+    var n = data.nodes[k],    //definisco il nodo corrente
+        i = index(n),         //definisco il cluster del nodo, undefined se non assegnato
+        l = gm[i] || (gm[i]=gn[i]) || (gm[i]={cluster:i, size:0, nodes:[]});//assegno ad l il mappaggio del cluster se già definito, sennò lo vado a definire associandogli il gruppo di nodi corrispondenti al cluster i della rete precedente, se non era stato definito un gruppo, allora lo creo adesso.
+
+	if(typeof expand[i] === "undefined") //voglio che alla prima iterazione tutti i nodi siano espansi, quindi metto tutto a true
+		expand[i] = true;
+    if (expand[i]) {//se il cluster i deve essere espanso
+      // the node should be directly visible
+      nm[n.id] = nodes.length; //mappo su nm il nodo con id n.id associandogli la lunghezza corrente dell'array nodes
+
+      nodes.push(n); //inserisco il nodo corrente nell'array dei nodi della rete da mandare in output
+      if (gn[i]) {//se, inoltre il nodo appartiene ad un cluster
+        // place new nodes at cluster location (plus jitter)
+        //piazzo il nuovo nodo creato in una posizione data da quella del cluster sfasata di un certo valore
+        n.x = gn[i].x + Math.random();
+        n.y = gn[i].y + Math.random();
+      }
+    }
+
+    else{//se il cluster i deve essere collassato, in questo caso costruisco il cluster
+      // the node is part of a collapsed cluster
+      if (l.size == 0) {//se il cluster è stato appena creato
+        // if new cluster, add to set and position at centroid of leaf nodes
+        nm[i] = nodes.length; //aggiorno il mappaggio dei nodi aggiungendo il cluster
+        nodes.push(l);//aggiungo il cluster all'insieme di nodi di output
+        if (gc[i]) {//se sono definiti i dati per calcolare il centroide del cluster
+          l.x = gc[i].x / gc[i].count;//mi calcolo x ed y del centroide
+          l.y = gc[i].y / gc[i].count;
+        }
+      }
+      l.nodes.push(n); //alla fine dell'else aggiungo ai nodi del cluster il nodo considerato
+    }
+  // always count group size as we also use it to tweak the force graph strengths/distances
+    l.size += 1;//aggiorno il numero di nodi appartenenti al cluster
+  n.group_data = l; //aggiungo l'attributo group_data al nodo corrente indicando le info del cluster a cui appartiene
+  }
+
+  for (i in gm) { gm[i].link_count = 0; } //per ogni cluster definisco l'attr link_count = 0
+
+console.log(nodes);
+  // determine edges
+  for (k=0; k < data.edges.length; ++k) {//per ogni arco nel dataset
+//    console.log(data.edges[k]);
+  //  console.log(k);
+    var e = data.edges[k],    //definisco l'arco corrente
+        u = index(e.source),  //definisco il cluster del nodo sorgente
+        v = index(e.target);  //definisco il cluster del nodo destinazione
+
+  if (u != v) { //se i cluster di sorgente e destinazione sono diversi
+    gm[u].link_count++; //aggiorno il numero di archi dei nodi cluster
+    gm[u].externEdges = gm[u].externEdges || [];//aggiungo i link esterni al cluster
+    gm[u].externEdges.push(e);
+    gm[v].link_count++;
+    gm[v].externEdges = gm[v].externEdges || [];
+    gm[v].externEdges.push(e);
+
+  }else{
+    nodes.find(function(n){return n.cluster == u}).internEdges = nodes.find(function(n){return n.cluster == u}).internEdges || [];
+    nodes.find(function(n){return n.cluster == u}).internEdges.push(e);
+  }					        //nodo libero	  cluster
+    u = expand[u] ? nm[e.source.id] : nm[u]; // se il cluster u deve essere espanso, ridefinisco u come il nodo dentro il cluster
+    v = expand[v] ? nm[e.target.id] : nm[v]; //corrispondente alla sorgente dell'arco, lo stesso per la destinazione.
+
+    var i = (u<v ? u+"|"+v : v+"|"+u),//definisco le chiavi per il mappaggio degli archi
+        l = lm[i] || (lm[i] = {source:u, target:v, size:e.value, label:e.label});//assegno ad l il mappaggio degli archi che collegano il cluster (o il nodo) u con il cluster (o il nodo) v in un unico arco da u a v con peso size.
+   // l.size += 1;    //aggiorno il peso del collegamento tra i due nodi.
+  }
+  for (i in lm) { edges.push(lm[i]); } //aggiungo gli archi aggiornati e pesati agli archi di output
+	console.log(lm);
+
+  for (var i=0; i<edges.length; ++i) {
+    o = edges[i];
+    o.label = edges[i].label;
+    if (!o.label.includes(edges[i].label)){
+    	o.label = o.label + "; " + edges[i].label;
+    }
+
+    o.index = i;
+    o.source = nodes[o.source];
+    o.target = nodes[o.target];
+  }
+//METTERE LA SIZE IN EXTERNALLINKS CHE VANNO NEL CLUSTER
+  return {nodes: nodes, edges: edges}; //ritorno la nuova rete fatta di nodi e archi.
+}
+
+// -----------------------------------------------------------------------------------------------
+
+function updateSize() {
+  let nBytes = 0,
+      oFiles = document.getElementById("uploadInput").files,
+      nFiles = oFiles.length;
+  for (let nFileId = 0; nFileId < nFiles; nFileId++) {
+    nBytes += oFiles[nFileId].size;
+  }
+  let sOutput = nBytes + " bytes";
+  // optional code for multiples approximation
+  for (let aMultiples = ["KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"], nMultiple = 0, nApprox = nBytes / 1024; nApprox > 1; nApprox /= 1024, nMultiple++) {
+    sOutput = nApprox.toFixed(3) + " " + aMultiples[nMultiple] + " (" + nBytes + " bytes)";
+  }
+  // end of optional code
+  //document.getElementById("fileNum").innerHTML = nFiles;
+  //document.getElementById("fileSize").innerHTML = sOutput;
+}
+
+// -----------------------------------------------------------------------------------------------
+
+function refreshVars(){//data  net  simulation  startX,startY,endX, endY,
+    data = {};
+    net = null;
+    startX = undefined;
+    startY = undefined;
+    linkg ? linkg.remove() : {};
+    link = {};
+    nodeg ? nodeg.remove() : {};
+    nodeg = {};
+    chordg ? chordg.remove() : {};
+    chordg = {};
+    matrixg ? matrixg.remove() : {};
+    matrixg = {};
+    node = {};
+    text ? text.remove() : {};
+    text = {};
+    clNum = 0; //numero progressivo di cluster creati con selezione area mouse
+    nodesAdjacency = [];
+    degSortedList = [];
+    weightSortedEdges = [];
+    copymap = [];
+    clnodes = [];
+    expand = {}; // expanded clusters
+    copyNum = 0;
+    vis.remove();
+    vis = {};
+    vis = container.append("svg")
+                   .attr("width", width)
+                   .attr("height", height)
+                   .on("mousedown", mousedown)
+                   .on("mousemove", mousemove)
+                   .on("mouseup", function(){mouseup("");});
+
+    border = vis.append("rect")
+                .attr("class", "border")
+                .attr("width", width)
+                .attr("height", height);
+}
+
+// -----------------------------------------------------------------------------------------------
+
+function exportDrawing(){
+
+	var nodeList = [];
+	var nodes = simulation.nodes();
+
+	for (var node in nodes) {
+		var nodeObject = {};
+		var id = nodes[node].id;
+		var xCoord = nodes[node].x;
+		var yCoord = nodes[node].y;
+		nodeObject["id"]=id;
+		nodeObject["xCoord"]=xCoord;
+		nodeObject["yCoord"]=yCoord;
+		nodeList.push(nodeObject);
+	}
+
+	exportToJsonFile(nodeList);
+}
+
+function exportToJsonFile(drawing) {
+    let dataStr = JSON.stringify(drawing);
+    let dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+
+    let exportFileDefaultName = 'data.json';
+
+    let linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+}
+
+function loadDrawing(){
+
+	  let fileInput = document.getElementById("uploadDrawing");
+	    oFile = fileInput.files[0];
+	    reader = new FileReader();
+	    fileInput.value = "";
+	  reader.readAsText(oFile,'ISO-8859-1');
+	  reader.onloadend = function(){
+	        var drawing = reader.result;
+	        var saveDrawing = JSON.parse(drawing);
+	      	var nodes = simulation.nodes();
+
+	        for (var node in nodes) {
+	        	var nodeObject = {};
+	    		nodes[node].x = saveDrawing[node].xCoord;
+	    		nodes[node].y = saveDrawing[node].yCoord;
+	        }
+    		simulation.restart();
+	    };
+}
+
+
+function loadData(){
+  updateSize();
+  //location.reload();
+  refreshVars();
+
+  console.log(net);
+  console.log(net);
+  console.log(expand);
+  let fileInput = document.getElementById("uploadInput");
+    oFile = fileInput.files[0];
+    reader = new FileReader(),
+    json = {},
+    data = {};
+    fileInput.value = "";
+  reader.readAsText(oFile,'ISO-8859-1');
+  reader.onloadend = function(){
+                  //document.write(reader.result);
+          var gml = reader.result,
+              json = parse(gml);
+          console.log(json);
+         // vis.attr("width", width)
+           //  .attr("height", height);
+
+          data = {};
+          data.nodes = json.nodes;
+          data.edges = json.edges;
+          console.log(json.edges);
+          /*Receives nodes and edges on the d3 format clusters them, and return the clusters
+            the nodes should be a list of objects that at least contains an attribute id
+            and the edges should be a list of objects {source:index, target:index, count}
+            netClustering.cluster = function (nodes, edges, clusterAttr, edgesCountAttr):
+          clusterAttr --> attributo dei nodi rispetto al quale raggruppare, di default viene messo a 'cluster'*/
+         //Clustering.cluster(data.nodes, data.edges);
+
+          //data.nodes.map(function(n){n.id = data.nodes.indexOf(n)});//non va bene perchè gli archi puntano ai vecchi id
+
+          for (var i=0; i<data.edges.length; ++i) {
+            o = data.edges[i];
+            o.source = data.nodes.find(function(n){return n.id == o.source});//qui devo mettere la ricerca per id
+            o.target = data.nodes.find(function(n){return n.id == o.target});
+          }
+
+		      hullg = vis.append("g").attr("class", "hulls");
+          linkg = vis.append("g").attr("class", "edges");
+          splineg = vis.append("g").attr("class", "splines");
+          rectangleg = vis.append("g").attr("class", "rectangles");
+          nodeg = vis.append("g").attr("class", "nodes");
+          projg = vis.append("g").attr("class", "projs");
+          chordg = vis.append("g").attr("class", "diagrams");
+          matrixg = vis.append("g").attr("class", "matrices");
+
+      init();
+		  //netClustering.cluster(net.nodes, net.edges, "community", "clustervalue");
+
+      //KMEANS CLUSTERING
+
+     /* dataCoordinates = extractDataPositions(net.nodes);
+      var kmeans = new KMeans({
+        svg: vis,
+        data: dataCoordinates,
+        k: random(3,6)
+      });
+      console.log(kmeans);
+      assignCluster(kmeans.assignments, net.nodes);*/
+		  //vis.selectAll(".node").transition().duration(2000).style("fill", function(d) { return fill(d.community); });
+
+          vis.attr("opacity", 1e-6)
+             .transition()
+             .duration(1000)
+             .attr("opacity", 1);
+    };
+}
+
+// -----------------------------------------------------------------------------------------------
+
+
+function convexHulls(nodes, index, offset) {
+  var hulls = {};
+
+  // create point sets
+    for (var k=0; k<nodes.length; ++k) {
+        var n = nodes[k];
+        if (n.size || !(n.community+1) ) continue; //(n.size)
+        var i = index(n),
+            l = hulls[i] || (hulls[i] = []);
+        l.push([n.x-offset, n.y-offset]);
+        l.push([n.x-offset, n.y+offset]);
+        l.push([n.x+offset, n.y-offset]);
+        l.push([n.x+offset, n.y+offset]);
+  }
+
+  // create convex hulls
+  var hullset = [];
+  for (i in hulls) {
+     if (hulls[i].length > 4)
+      hullset.push({group: i, path: d3.polygonHull(hulls[i])});
+  }
+  return hullset;
+}
+
+function drawHull(d) {
+  return curve(d.path); // 0.8
+}
+
+function init() {
+  //creazione della rete
+  net = network(data, net, getCluster, expand);
+  //creazione lista adiacenza nodi
+
+//  net.splines = [];
+
+  net.nodes.map(function(n){
+    var listAdj = [];
+    net.edges.map(function(e){
+      e.source.id == n.id ? listAdj.push(e.target.id) : {};
+      e.target.id == n.id ? listAdj.push(e.source.id) : {};
+    });
+    nodesAdjacency[n.id] = listAdj;
+  });
+
+  /*edge pubs labelling*/
+  //net.edges.map(function(e){    e.value = edgePubs(e.source, e.target);  });
+
+  console.log('net');
+  console.log(net);
+
+  for (var i=0; i< net.nodes.length; i++) {
+	  var idNode = net.nodes[i].id;
+		  if (nodesAdjacency[idNode]==undefined || nodesAdjacency[idNode].length==0) {
+			  net.nodes.splice(i,1);
+			  i=i-1;
+		  }
+	  }
+
+ // net.nodes.filter()  filtrare i nodi che sono proiettati e rimappare gli archi o non ricalcolare la net e rimettere nodi ed archi su delete projection.
+
+  simulation = d3.forceSimulation(net.nodes)
+	  //.nodes(net.nodes)
+	  .force("link", d3.forceLink(net.edges).distance(linkDistance))
+    .force("charge", d3.forceManyBody().strength(-100*(150/data.nodes.length)))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+	  .force("x", d3.forceX(width / 2))
+    .force("y", d3.forceY(height / 2));
+
+  simulation.velocityDecay(0.5);
+  simulation.restart();
+
+/*ci metto anche on mouse down, che posiziona d.fx e d.fy di ogni nodo nella posizione che voglio: seleziono i nodi in base a d.cluster, poi di questi mi calcolo il centro e il raggio, poi uso le funzioni project ed intersection per calcolarmi la posizione nel cerchio e pongo d.fx e d.fy in quei punti. poi on mouseup d.fx e d.fy vengono rimessi a null.*/
+
+
+  hull = hullg.selectAll("path.hull");
+
+  linkg.selectAll("line.link").remove();
+  link = linkg.selectAll("line.link")
+	          .data(net.edges, linkid)
+			 // link.exit().remove();
+	          .enter().append("line")
+    			  .attr("class", "link")
+    			  .attr("stroke-width", function(d) { return linkUpperBuond(d.size) || 1; })
+            .attr("stroke", "black")
+            .attr("stroke-color", "black")
+           // .attr("stroke", "lightgrey")
+           // .attr("stroke-color", "lightgrey")
+            .attr("stroke-opacity", 0.6)
+            .on("mouseenter", mouseEnterEdge)
+            .on("mouseleave", mouseLeaveEdge);
+
+  nodeg.selectAll("circle.node").remove();
+  node = nodeg.selectAll("circle.node")
+		        .data(net.nodes, nodeid)
+		        .enter().append("circle")
+		        .attr("class", function(d) { return "node" + (d.size?" cluster":" leaf"); })
+    				.attr("r", function(d) { return d.size ? d.size + dr : dr+1; })
+    				.attr("cx", function(d) { return d.x; })
+    				.attr("cy", function(d) { return d.y; })
+            .attr("stroke-width", 3)
+            .attr("stroke-color","#666666")
+            .attr("stroke", "#666666")
+            .attr("stroke-opacity", 0.6)
+		        .attr("fill", function(d) { return "#a6cee3"; })
+            .on("mouseenter", mouseEnterNode)
+            .on("mouseleave", mouseLeaveNode)
+            .on("mousedown", function(d){return ctrlClick(d,net.nodes)})
+            .on("contextmenu", function(d){return labelling.rightClick(d)});
+
+	nodeg.selectAll("circle.node.cluster")
+          .on("click", expandCluster);
+
+
+  node.call(d3.drag()
+			    .on("start", dragstarted)
+		      .on("drag", dragged)
+		      .on("end", dragended));
+
+  degSortedList = calculateDegree(net);
+
+  weightSortedEdges = d3.scaleThreshold()
+                        .domain(calculateWeightIntervals(net.edges))
+                        .range([1,2,3,4]);
+
+  kMap = d3.scaleQuantile()//mapping nodes position with zooming scale value (k)
+                  .domain(range(net.nodes.length))
+                  .range([0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8]);
+
+  text = nodeg.selectAll(".text")
+    .data(net.nodes)
+    .enter().append("text")
+    .each(function(d) {
+      // compute the scale threshold for this element. i.e. how big does the scale need to be before I should display
+      d.kThreshold = kMap(degSortedList.indexOf(d.degree));
+      d.opacityScale = d3.scaleLinear()
+        .domain([d.kThreshold, d.kThreshold + 1])
+        .range([0, 1]);
+    })
+    .attr("dy", ".35em")
+    .attr("dx", ".90em")
+    .text(function(d) { return getLabel(d); })
+    .attr('opacity', function(d) {
+      if (d.kThreshold < 1) {
+        return 1;
+      }
+      return 0;
+    })
+    .style("font-family", "sans-serif") // Ale
+    .style("font-size", labelSize+"px");
+    //.style("text-anchor", "middle");
+
+    vis.select('g.edges').attr("transform", d3.zoomIdentity);
+    vis.select('g.nodes').attr("transform", d3.zoomIdentity);
+    vis.select('g.diagrams').attr("transform", d3.zoomIdentity);
+    vis.select('g.rectangles').attr("transform", d3.zoomIdentity);
+    vis.select('g.splines').attr("transform", d3.zoomIdentity);
+    vis.select('g.matrices').attr("transform", d3.zoomIdentity);
+    k = 1, //zooming factor
+    deltaX = 0, // X zooming translation
+    deltaY = 0, // Y zooming translation
+	simulation.on("tick", ticked);
+
+}
+
+// -----------------------------------------------------------------------------------------------
+
+function linkDistance(l,i){
+        var n1 = l.source, n2 = l.target;
+      // larger distance for bigger groups:
+      // both between single nodes and _other_ groups (where size of own node group still counts),
+      // and between two group nodes.
+      //
+      // reduce distance for groups with very few outer edges,
+      // again both in expanded and grouped form, i.e. between individual nodes of a group and
+      // nodes of another group or other group node or between two group nodes.
+      //
+      // The latter was done to keep the single-link groups ('blue', rose, ...) close.
+      return 30 +
+        Math.min(20 * Math.min((n1.size || (n1.cluster != n2.cluster ? n1.group_data.size : 0)),
+                   (n2.size || (n1.cluster != n2.cluster ? n2.group_data.size : 0))),
+           -30 +
+           30 * Math.min((n1.link_count || (n1.cluster != n2.cluster ? n1.group_data.link_count : 0)),
+                 (n2.link_count || (n1.cluster != n2.cluster ? n2.group_data.link_count : 0))),
+           100);
+        //return 150;
+      }
+
+// -----------------------------------------------------------------------------------------------
+
+function ticked() {
+
+   if (!hull.empty()) {
+      hull.data(convexHulls(net.nodes, getGroup, off))
+          .attr("d", drawHull);
+    }
+
+    nodeg.selectAll("circle.node")
+       /* .attr("cx", function(d) { return d.x = Math.max(this.getAttribute("r"), Math.min(width - this.getAttribute("r"), d.x)); })
+        .attr("cy", function(d) { return d.y = Math.max(this.getAttribute("r"), Math.min(height - this.getAttribute("r"), d.y)); });*/
+        .attr("cx", function(d) { return d.x; })
+        .attr("cy", function(d) { return d.y; });
+ link.attr("x1", function(d) { return d.source.x; })
+        .attr("y1", function(d) { return d.source.y; })
+        .attr("x2", function(d) { return d.target.x; })
+        .attr("y2", function(d) { return d.target.y; });
+
+    text.attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; });
+
+  }
+
+// -----------------------------------------------------------------------------------------------
+
+function calculateDegree(net){
+
+  var nodes = net.nodes,
+      edges = net.edges,
+      degSortedList = [];
+
+  nodes.map(function(n){
+    var countDeg = 0;
+    edges.map(function(e){
+      e.source == n || e.target == n ? countDeg++ : {};
+    });
+    n.degree = countDeg;
+    degSortedList.push(countDeg);
+  });
+
+  degSortedList.sort(function(a,b){return b-a});
+  return degSortedList;
+}
+
+function calculateWeightIntervals(edges){
+  /*var maxSize = 1,
+      thresholds = [],
+      frac = [0.25, 0.33, 0.5];
+
+  edges.map(function(e){    e.size > maxSize ? maxSize=e.size : {}  });
+  edges.sort(function(a,b){return a.size-b.size;});
+  for (var i = 0; i < 3; i++) {
+    thresholds[i] = edges[Math.ceil(edges.length*frac[i])].size+0.1;
+    edges = edges.filter(e => e.size > thresholds[i]);
+  }
+  console.log('thresholds');
+  console.log(thresholds);
+  return thresholds;*/
+  var thresholds = [],
+      tr,
+      frac = [0.25, 0.33, 0.5],
+      sizes = [];
+
+ // edges.sort(function(a,b){return a.size-b.size;});
+  edges.map(function(e){
+    sizes.push(e.size);
+  });
+  sizes.sort(function(a,b){return a-b;});
+  for (var i = 0; i < 3; i++) {
+    if(sizes.length > 0){
+      tr = sizes[Math.ceil(sizes.length*frac[i])]+0.1;
+      sizes = sizes.filter(e => e > tr);
+      sizes.length > 0 ? thresholds[i] = tr : {};
+    }
+  }
+  thresholds.length == 0 ? thresholds = 1 : {}
+  console.log('thresholds');
+  console.log(thresholds);
+  return thresholds;
+
+}
+
+function linkUpperBuond(size){
+  return size < 5 ? size : 5;
+}
+// -----------------------------------------------------------------------------------------------
+
+var body = d3.select("body"),
+    container = body.append("div")
+                    .attr("class","container")
+                    .attr("width", width)
+                    .attr("height", height),
+    vis = container.append("svg")
+                   .attr("width", width)
+                   .attr("height", height)
+                   .on("mousedown", mousedown)
+                   .on("mousemove", mousemove)
+                   .on("mouseup", function(){ mouseup("");}),
+    border = vis.append("rect")
+                .attr("class", "border")
+                .attr("width", width)
+                .attr("height", height);
+    //fileSelect = document.getElementById("fileSelect"),
+    //fileElem = document.getElementById("uploadInput");
+
+window.addEventListener("keydown", keydownfunction, false);
+window.addEventListener("keyup", keyupfunction, false);
+  /*  <form name="tryForm">
+      <p><input id="uploadInput" type="file" name="myFiles" onchange="loadData()" /></span>file size: <span id="fileSize">0</span></p>
+    </form>*/
+  /* When the user clicks on the button,
+toggle between hiding and showing the dropdown content */
+function myFunction() {
+  document.getElementById("myDropdown").classList.toggle("show");
+}
+
+function myFunction2() {
+  document.getElementById("myDropdown2").classList.toggle("show");
+}
+
+function myFunction3() {
+  document.getElementById("myDropdown3").classList.toggle("show");
+}
+
+function dropBtnClustering() {
+  document.getElementById("myDropdown4").classList.toggle("show");
+}
+
+function toggleNoLabels(){
+  console.log("toggleNoLabels");
+  labelling.setStrategy(noLabels);
+  vis.select('g.nodes').selectAll('text').each(function(d){d.clicked = false;})
+  nodeg.selectAll("text").transition()
+                         .duration(1000)
+                         .attr("opacity", 0.2)
+                         .style("font-size", 0+"px")
+                         .style("font-family", "sans-serif"); // Ale
+}
+
+function toggleLabelling() {
+  console.log("toggleLabelling");
+  labelling.setStrategy(labellingWithZooming);
+  vis.select('g.nodes').selectAll('text').each(function(d){d.clicked = false;})
+
+  /*nodeg.selectAll("text").transition()
+                         .duration(1000)
+                         .attr("opacity", 0)
+                         .on("end", callback);*/
+  restartLabelling(k);
+}
+
+function restartLabelling(k){
+  vis.select('g.nodes').selectAll('text')
+                       .transition()
+                       .duration(1000)
+                       .style("font-family", "sans-serif") // Ale
+                       .style("font-size", function(d){
+                              if (k >= d.kThreshold && !d.clicked) {
+                                return k > 1 ? labelSize/Math.sqrt(k)+"px" : labelSize+"px"
+                              }
+                              return 0;
+                        })
+                      .attr('opacity', function(d) {
+                        if (k >= d.kThreshold) {
+                        //  console.log(d3.event.scale);
+                          return d.opacityScale(k);
+                        }
+                        return 0;
+                      });
+
+    chordg.selectAll('g.group')
+          .selectAll("text")
+          .style("font-family", "sans-serif") // Ale
+          .style("font-size", k > 1 ? labelSize/Math.sqrt(k)+"px" : labelSize+"px");
+    matrixg.selectAll('g.label')
+          .selectAll("text")
+          .style("font-family", "sans-serif") // Ale
+          .style("font-size", k > 1 ? labelSize/Math.sqrt(k)+"px" : labelSize+"px");
+
+}
+
+function toggleAllLabels(){
+  console.log("toggleAllLabels");
+  labelling.setStrategy(allLabelsShown);
+  vis.select('g.nodes').selectAll('text').each(function(d){d.clicked = false;})
+  nodeg.selectAll("text").transition()
+                         .duration(1000)
+                         .attr("opacity", 1)
+                         .style("font-family", "sans-serif") // Ale
+                         .style("font-size", function(d){
+                            if(!d.clicked)
+                              return k > 1 ? labelSize/Math.sqrt(k)+"px" : labelSize+"px"
+                            return 0;
+                          });
+}
+// Close the dropdown menu if the user clicks outside of it
+window.onclick = function(event) {
+  if (!event.target.matches('.dropbtn')) {
+    var dropdowns = document.getElementsByClassName("dropdown-content");
+    var i;
+    for (i = 0; i < dropdowns.length; i++) {
+      var openDropdown = dropdowns[i];
+      if (openDropdown.classList.contains('show')) {
+        openDropdown.classList.remove('show');
+      }
+    }
+  }
+  if (!event.target.matches('.dropbtn2')) {
+    var dropdowns = document.getElementsByClassName("dropdown2-content");
+    var i;
+    for (i = 0; i < dropdowns.length; i++) {
+      var openDropdown = dropdowns[i];
+      if (openDropdown.classList.contains('show')) {
+        openDropdown.classList.remove('show');
+      }
+    }
+  }
+  if (!event.target.matches('.dropbtn4')) {
+    var dropdowns = document.getElementsByClassName("dropdown4-content");
+    var i;
+    for (i = 0; i < dropdowns.length; i++) {
+      var openDropdown = dropdowns[i];
+      if (openDropdown.classList.contains('show')) {
+        openDropdown.classList.remove('show');
+      }
+    }
+  }
+}
+
+var showVertical = false;
+
+function horizontalMatrixLabels(){
+  showVertical = false;
+  matrixg.selectAll('.vertical')
+         .attr("display","none");
+}
+
+function bothMatrixLabels(){
+  showVertical = true;
+  matrixg.selectAll('.vertical')
+         .attr("display","visible");
+}
+
+
+function changeLabelSize(){
+  labelSize = document.getElementById("labelSize").value;
+  vis.select('g.nodes').selectAll('text')
+     .style("font-family", "sans-serif") // Ale
+    .style("font-size", k > 1 ? labelSize/Math.sqrt(k)+"px" : labelSize+"px");
+  chordg.selectAll('g.group').selectAll("text")
+    .style("font-family", "sans-serif") // Ale
+    .style("font-size", k > 1 ? labelSize/Math.sqrt(k)+"px" : labelSize+"px");
+  matrixg.selectAll('g.label').selectAll("text")
+    .style("font-family", "sans-serif") // Ale
+    .style("font-size", k > 1 ? labelSize/Math.sqrt(k)+"px" : labelSize+"px");
+}
+
+function changeKvalue(){
+  param = document.getElementById("Kvalue").value;
+  createHulls();
+}
+
+function changeThreshold(){
+  param2 = document.getElementById("Kthreshold").value;
+  createHulls();
+}
+
+function updateTextInput(val) {
+          document.getElementById('textInput').value=val;
+}
+
+function updateTextInput2(val) {
+          document.getElementById('textInput2').value=val;
+}
+
+function updateTextInput3(val) {
+          document.getElementById('textInput3').value=val;
+}
+
+function createPalette(palette){
+  var arr = [];
+
+  for (var i = 0; i < palette.length; i++) {
+    arr.push({"used": false, "color":palette[i], "element": ""});
+  }
+  return arr;
+}
+function rgbToHex(rgb) {
+  var hex = Number(rgb).toString(16);
+  if (hex.length < 2) {
+       hex = "0" + hex;
+  }
+  return hex;
+};
+function fullColorHex (r,g,b) {
+  var red = rgbToHex(r);
+  var green = rgbToHex(g);
+  var blue = rgbToHex(b);
+  return red+green+blue;
+};
+
+
+var rangeSlider = function(){
+  var slider = $('.range-slider'),
+      range = $('.range-slider__range'),
+      value = $('.range-slider__value');
+
+  slider.each(function(){
+
+    value.each(function(){
+      var value = $(this).prev().attr('value');
+      $(this).html(value);
+    });
+
+    range.on('input', function(){
+      $(this).next(value).html(this.value);
+    });
+  });
+};
+
+
+//-------------------------------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------------------------------------
+
+</script>
+
+   <input type="file" name="file" style="display:none" id="uploadInput" class="inputfile" onchange="loadData()"/>
+   <button onclick="loadData()" title="Choose a GML file" class="btn btnInput" id="gmlInput"> </button>
+   <label for="uploadInput" id="labelInput" title="Choose a GML file"> </label>
+
+   <input type="button" name="file" style="display:none" id="saveDrawing" class="saveDrawing" onclick="exportDrawing()"/>
+   <button onclick="exportDrawing()" title="Export a Drawing" class="btn btnExport" id="export"> </button>
+   <label for="saveDrawing" id="saveDrawing" title="Export a Drawing"> </label>
+
+   <input type="file" name="file" style="display:none" id="uploadDrawing" class="inputdrawing" onchange="loadDrawing()"/>
+   <button onclick="loadDrawing()" title="Import a Drawing" class="btn btnImport" id="import"> </button>
+   <label for="uploadDrawing" id="labelInputDrawing" title="Import a Drawing"> </label>
+
+   <div class="dropdown">
+    <button onclick="myFunction()" title="Labeling options" style="outline:none" class="dropbtn"> </button>
+    <div id="myDropdown" class="dropdown-content">
+      <a onclick="toggleNoLabels()">No Labels</a>
+      <a onclick="toggleLabelling()">Automatic Labels</a>
+      <a onclick="toggleAllLabels()">All Labels</a>
+    </div>
+   </div>
+
+    <!-- <button onclick="createHulls()" title="Suggest clusters" class="btn btnSuggest" style="outline:none" id="suggest"> </button> -->
+
+    <div class="dropdown4">
+     <button onclick="dropBtnClustering()" title="Suggest clusters" style="outline:none" class="dropbtn4"> </button>
+     <div id="myDropdown4" class="dropdown4-content">
+       <a onclick="createHulls()">Geometric clusters</a>
+       <a onclick="createHullsTopol()">Topological clusters</a>
+     </div>
+    </div>
+
+    <button onclick="hideHulls()" title="Hide clusters suggestion" style="outline:none" class="btn btnHide"> </button>
+
+     <div class="slidecontainer">Label size:
+      <input type="text" size="1" readonly="true" id="textInput" value="12" style="outline:none;border-color:transparent; font-size:14px;background-color:transparent;">
+      <input type="range" min="5" max="24" value="12" class="slider" id="labelSize" onchange="updateTextInput(this.value);" oninput="changeLabelSize()"/>
+     </div>
+
+     <div class="slidecontainer2" hidden="true">Number of clusters:
+       <input type="text" size="1" readonly="true" id="textInput2" value="2" style="outline:none;border-color:transparent; font-size:14px;background-color:transparent;">
+      <input type="range" min="1" max="5" value="2" step="0.25" class="slider" id="Kvalue" onchange="updateTextInput2(this.value);" oninput="changeKvalue()" />
+     </div>
+
+    <div class="slidecontainer3" hidden="true">Size of clusters:
+      <input type="text" size="1" readonly="true" id="textInput3" value="4" style="outline:none;border-color:transparent; font-size:14px;background-color:transparent;">
+      <input type="range" min="2" max="8" value="4" step="0.25" class="slider" id="Kthreshold" onchange="updateTextInput3(this.value);" oninput="changeThreshold()" />
+    </div>
+
+    <div class="dropdown2">
+     <button onclick="myFunction2()" title="Matrix labels" style="outline:none" class="dropbtn2"> </button>
+     <div id="myDropdown2" class="dropdown2-content">
+       <a onclick="horizontalMatrixLabels()">Horizontal only</a>
+       <a onclick="bothMatrixLabels()">Horizontal and vertical</a>
+     </div>
+    </div>
+
+    <div class="dropdown3">
+     <button onclick="myFunction3()" title="Help" style="outline:none" class="dropbtn3"> </button>
+     <div id="myDropdown3" class="dropdown3-content">
+       <a>
+          Mouse selection: Cluster node<br>
+          Mouse selection + 'c': Chord diagram<br>
+          Mouse selection + 'm': Matrix<br>
+        </a>
+        <a>
+          CLUSTER NODE<br>
+          Left click: Chord diagram<br>
+          Right click: Matrix<br>
+          Left/right click + 'ctrl': Node-link<br>
+        </a>
+        <a>
+          CHORD DIAGRAM<br>
+          Left click: Cluster node<br>
+          Right click on circular arc: Removes node<br>
+          Node drag: Adds node<br>
+        </a>
+        <a>
+          MATRIX<br>
+          Left click: Cluster node<br>
+          Right click on diagonal: Removes node<br>
+          Node drag: Adds node<br>
+        </a>
+        <a>
+          CONVEX HULL<br>
+          Left click: Chord diagram<br>
+          Right click: Matrix<br>
+          Left click + 'ctrl': Removes/adds node<br>
+        </a>
+     </div>
+    </div>
+
+  </input>
+
+  </body>
+</html>
