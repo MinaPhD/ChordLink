@@ -6,6 +6,7 @@ The code is unpolished ...
 
 To run on your browser, open the "chordlink2.html" file.
 Some examples of input files can be found in the "data" folder.
+(Compressed files need to be unzipped)
 
 The code uses the "Reorder.js" library for reordering matrices [3]. 
 
