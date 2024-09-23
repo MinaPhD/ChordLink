@@ -1,6 +1,6 @@
 # ChordLink
 
-This repository contains the source code for a prototype system for the ChordLink model [1,2].
+This repository contains the source code for a prototype system for the ChordLink model [1, 2].
 
 The code is unpolished ...
 
