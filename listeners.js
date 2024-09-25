@@ -195,7 +195,7 @@ function mouseEnterChord(d){
       return copymap[cl][map[d.index][0]] == trg.id;
     }),
 
-		text = 	ribbonLabel(src["id"],trg["id"],diagram.datum().internEdges); // ALESSANDRA
+		text = 	ribbonLabel(src["id"],trg["id"],diagram.datum().internEdges);
 
 //		text = getLabel(src) +" "+ getLabel(trg); // LORENZO
 
@@ -694,7 +694,7 @@ function mouseEnterCopyEdge(d){
         .attr("stroke-color","red")
         .attr("stroke","red");
 
-// Alessandra
+
   var extLink = d3.selectAll("line.link").select(function(l){return l.source == d.source || l.target == d.source ? this : null});
   var extNode = extLink.datum().source.label ? extLink.datum().source : extLink.datum().target;
       d3.selectAll("circle.node").select(function(d){return d.id ==extNode.id || d.id == extNode.id ? this : null})
@@ -729,7 +729,7 @@ function mouseLeaveCopyEdge(d){
      .attr("stroke-color","black")
      .attr("stroke","black");
 
- // Alessandra
+ 
    var extLink = d3.selectAll("line.link").select(function(l){return l.source == d.source || l.target == d.source ? this : null});
    var extNode = extLink.datum().source.label ? extLink.datum().source : extLink.datum().target;
        d3.selectAll("circle.node").select(function(d){return d.id ==extNode.id || d.id == extNode.id ? this : null})
