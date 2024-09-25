@@ -1421,12 +1421,12 @@ function createHulls(){
 
     //KMEANS CLUSTERING
     var nodesToAssign = net.nodes.filter(function(n) {if(typeof(n.cluster)=="undefined") return n})
-    var kmeans = optKMeans(nodesToAssign,param,param2); // ALE: ho sostituito net.nodes con nodesToAssign
+    var kmeans = optKMeans(nodesToAssign,param,param2);
     console.log(kmeans);
     console.log(calculateWithinClusterVariance(kmeans));
     assignCluster(kmeans.assignments, net.nodes);
     //filterNodesByDistance(net.nodes, kmeans.means, kmeans.treshold);//se la distanza dal centroide supera la soglia, allora n.community = -1
-  	filterNodesByTresholds(nodesToAssign, kmeans.means, kmeans.tresholds); // ALE: ho sostituito net.nodes con nodesToAssign
+  	filterNodesByTresholds(nodesToAssign, kmeans.means, kmeans.tresholds);
 
 
 
