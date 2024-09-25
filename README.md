@@ -2,7 +2,7 @@
 
 This repository contains the source code for a prototype system for the ChordLink model [1, 2].
 
-The code is unpolished ...
+The code is unpolished but it is open for academic and research purposes. If you use it in your paper, please cite [1] and [2].
 
 To run on your browser, open the "chordlink2.html" file.
 Some examples of input files can be found in the "data" folder.
