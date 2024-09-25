@@ -484,7 +484,7 @@ function expandMatrix(d){
 					var edge = {},
 						size = e.size;
 					e.size = 0;
-					// ALESSANDRA
+					
 							// edge = externalEd.find(function(l){return l.source == e.source && l.target == e.target && l.size > 0});
 							edge = externalEd.find(function(ed){return e != edge &&
 													((ed.source.copy && e.source.copy && copymap[ed.source.cluster][ed.source.number] == copymap[e.source.cluster][e.source.number] && ed.target == e.target) ||
@@ -504,7 +504,6 @@ function expandMatrix(d){
 				externalEd = externalEd.filter(e => !(e.size==0));
 
 
-				// ALESSANDRA - se ci sono due copies di uno stesso arc nel cluster node d che vanno in un chord-diagram esterno, questo codice le unisce
 				d.externEdges.map(function(e){
 					if (d.externEdges.indexOf(e)) {
 							for (var j = 0; j < d.externEdges.length; j++) {
@@ -530,7 +529,6 @@ function expandMatrix(d){
 				});
 
 
-// ALESSANDRA
 				//aggiornamento externEdges collegati a matrici
 				matrixg.selectAll("g.matrix").each(function (dm, i) {
 					splineEdges = dm.externEdges.filter(e => (e.source.cluster == d.cluster || e.target.cluster == d.cluster) && d != dm);
@@ -671,7 +669,6 @@ function deleteMatrix(d){
 			e.size = size;
 
 
-	// ALESSANDRA
 			 // el = d.externEdges.find(function(ed){return (edge.target.cluster == ed.source.cluster && edge.target.cluster == d.cluster || edge.target.cluster == ed.target.cluster && edge.target.cluster == d.cluster || edge.source.cluster == ed.source.cluster && edge.source.cluster == d.cluster || edge.source.cluster == ed.target.cluster && edge.source.cluster == d.cluster);});
 			 el = d.externEdges.find(function(l){return ((l.source == edge.source && l.target == edge.target) || (l.target == edge.source && l.source == edge.target))});
 			//non fa la sommare 			(l.target == edge.source && l.source == edge.target)
@@ -694,7 +691,6 @@ function deleteMatrix(d){
 });
 
 
-// ALESSANDRA - se ci sono due copies di uno stesso arc di un chord diagram esterno che vanno nel cluster node d, questo codice le unisce
  net.edges.map(function(e){
 	 if (d.externEdges.indexOf(e)) {
 			 for (var j = 0; j < d.externEdges.length; j++) {
@@ -740,7 +736,6 @@ function deleteMatrix(d){
 					e.size = 0;
 					e.source.cluster == clusterNode.cluster && e.source.copy ? e.source = clusterNode : {};
 					e.target.cluster == clusterNode.cluster && e.target.copy ? e.target = clusterNode : {};
-					// ALESSANDRA
 										// edge = d.externEdges.find(function(l){return l.source == e.source && l.target == e.target && l.size > 0});
 										edge = d.externEdges.find(function(l){return ((l.source == e.source && l.target == e.target && l.size > 0) || (l.target == e.source && l.source == e.target && l.size > 0))});//controllo presenza di copie
 
@@ -766,7 +761,6 @@ function deleteMatrix(d){
 							e.size = 0;
 							e.source.cluster == clusterNode.cluster && e.source.copy ? e.source = clusterNode : {};
 							e.target.cluster == clusterNode.cluster && e.target.copy ? e.target = clusterNode : {};
-							// ALESSANDRA
 												// edge = d.externEdges.find(function(l){return l.source == e.source && l.target == e.target && l.size > 0});
 												edge = d.externEdges.find(function(l){return ((l.source == e.source && l.target == e.target && l.size > 0) || (l.target == e.source && l.source == e.target && l.size > 0))});//controllo presenza di copie
 
@@ -795,7 +789,6 @@ function deleteMatrix(d){
 			delete e.controlPoints;
 
 
-			// ALESSANDRA
 						// edge = cl.externEdges.find(function(l){return l.source == e.source && l.target == e.target && l.size > 0});
 						edge = cl.externEdges.find(function(l){return ((l.source == e.source && l.target == e.target && l.size > 0) || (l.target == e.source && l.source == e.target && l.size > 0))});//controllo presenza di copie
 
@@ -892,7 +885,6 @@ if(!d.dragged)
 				e.splineData ? netE.splineData = e.splineData : {};
         netE.target.id == this.id ? netE.target = d : netE.source = d;//conrollare qui
 
-// // ALESSANDRA
 // 		// l = net.edges.find(function(l){return (l.source == netE.source && l.target == netE.target && l.size > 0)});//controllare
 // 		l = net.edges.find(function(l){return ((l.source == netE.source && l.target == netE.target && l.size > 0) || (l.target == netE.source && l.source == netE.target && l.size > 0))});//controllo presenza di copie
 //
@@ -904,7 +896,6 @@ if(!d.dragged)
 		net.edges.push(e);//lo devo pushare alla fine
 	}, n);
 
-// ALESSANDRA
 	//aggiornamento externEdges cluster collassati
 	clusters = net.nodes.filter(n => n.cluster && !(n.cluster == d.cluster)),
 	clusters.map(function(cl){
@@ -1123,12 +1114,12 @@ function deleteRectangle(d){//d in questo caso sono i dati legati all'oggetto ch
 		if(e.source.cluster == d.cluster && e.source.copy) {
 			var original = d.nodes.find(function(n){return n.id == copymap[d.cluster][e.source.number]});
 			e.source = clusterNode;
-			edge = {'source': original, 'target': e.target, 'size': e.size, 'label': e.label}; // ALESSANDRA added label
+			edge = {'source': original, 'target': e.target, 'size': e.size, 'label': e.label}; 
 		}
 		else if (e.target.cluster == d.cluster && e.target.copy){
 			var original = d.nodes.find(function(n){return n.id == copymap[d.cluster][e.target.number]});
 			e.target = clusterNode;
-			edge = {'source': e.source, 'target': original, 'size': e.size, 'label': e.label}; // ALESSANDRA added label
+			edge = {'source': e.source, 'target': original, 'size': e.size, 'label': e.label}; 
 		}
 		e.controlPoints ? edge.controlPoints = e.controlPoints : {};
 		e.splineData ? edge.splineData = e.splineData : {};
@@ -1244,12 +1235,12 @@ function addNodeMatrix(d, n){
 					edge = 	{'source': e.source, 'target': e.target, 'size': e.size, 'label': e.label};
 			e.controlPoints ? edge.controlPoints = e.controlPoints : {};
 			e.splineData ? edge.splineData = e.splineData : {};
-			d.externEdges.push(edge); // ALESSANDRA added label
+			d.externEdges.push(edge); 
 			d.link_count += size;
 			getCluster(e.source) == d.cluster ? e.source = d : {};
 			getCluster(e.target) == d.cluster ? e.target = d : {};
 			e.size = 0;
-			// ALESSANDRA
+			
 						// l = net.edges.find(function(l){return (l.source == e.source && l.target == e.target && l.size > 0)});//controllare
 						l = net.edges.find(function(l){return ((l.source == e.source && l.target == e.target && l.size > 0) || (l.target == e.source && l.source == e.target && l.size > 0))});//controllo presenza di copie
 
