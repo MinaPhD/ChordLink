@@ -134,7 +134,7 @@ div.tooltip {
   border-bottom: 1px solid royalblue;
   display:block;
   font-size : 14px;
-  font-family: sans-serif; /* Ale */
+  font-family: sans-serif;
 }
 
 /* Change color of dropdown links on hover */
@@ -199,7 +199,7 @@ div.tooltip {
   border-bottom: 1px solid royalblue;
   display:block;
   font-size : 14px;
-  font-family: sans-serif; /* Ale */
+  font-family: sans-serif;
 }
 
 /* Change color of dropdown links on hover */
@@ -266,7 +266,7 @@ div.tooltip {
   border-bottom: 1px solid lightgrey;
   display:block;
   font-size : 14px;
-  font-family: sans-serif; /* Ale */
+  font-family: sans-serif;
 }
 
 /* Dropdown Button */
@@ -324,7 +324,7 @@ div.tooltip {
   border-bottom: 1px solid royalblue;
   display:block;
   font-size : 14px;
-  font-family: sans-serif; /* Ale */
+  font-family: sans-serif;
 }
 
 /* Change color of dropdown links on hover */
@@ -348,7 +348,7 @@ div.tooltip {
   left: 230px;
   width: 13%; /* Width of the outside container */
   font-size: 14px;
-  font-family: sans-serif;  /* Ale */
+  font-family: sans-serif;  
   text-align: center;
   margin:auto;
   background-color: transparent;
@@ -361,7 +361,7 @@ div.tooltip {
   left: 590px;
   width: 16%; /* Width of the outside container */
   font-size: 14px;
-  font-family: sans-serif;  /* Ale */
+  font-family: sans-serif;  
   text-align: center;
   margin:auto;
   background-color: transparent;
@@ -374,7 +374,7 @@ div.tooltip {
   left: 850px;
   width: 16%; /* Width of the outside container */
   font-size: 14px;
-  font-family: sans-serif;  /* Ale */
+  font-family: sans-serif;  
   text-align: center;
   margin:auto;
   background-color: transparent;
